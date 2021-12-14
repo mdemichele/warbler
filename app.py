@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, flash, redirect, session, g
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
-from forms import UserAddForm, LoginForm, MessageForm
+from forms import UserAddForm, LoginForm, MessageForm, EditUserForm
 from models import db, connect_db, User, Message
 
 CURR_USER_KEY = "curr_user"
@@ -219,7 +219,50 @@ def stop_following(follow_id):
 def profile():
     """Update profile for current user."""
 
-    # IMPLEMENT THIS
+    # Check that the user is logged in
+    if not g.user:
+        flash("Access unauthorized.", "danger")
+        return redirect("/")
+    
+    # Get user from database 
+    user_id = session[CURR_USER_KEY]
+    user = User.query.get(user_id)
+    
+    # Create EditUserForm object 
+    form = EditUserForm(obj=user)
+    
+    # Return correct template with correct form 
+    if form.validate_on_submit():
+        username = user.username 
+        password = form.password.data 
+        
+        validated_user = User.authenticate(username, password)
+        
+        if validated_user:
+            # Get new values from form 
+            newUsername = form.username.data 
+            newEmail = form.email.data 
+            newImageUrl = form.image_url.data 
+            newHeaderImageUrl = form.header_image_url.data 
+            
+            # Edit the user 
+            user.username = newUsername 
+            user.email = newEmail 
+            user.image_url = newImageUrl 
+            user.header_image_url = newHeaderImageUrl
+            
+            db.session.add(user)
+            db.session.commit()
+            
+            # Flash a success message and navigate back to user profile 
+            flash("Successfully updated!")
+            return redirect(f'/users/{user.id}')
+            
+        else: 
+            flash("Password Incorrect. Try again!")
+            return render_template("/users/edit.html", form=form)
+    else:
+        return render_template("/users/edit.html", form=form)
 
 
 @app.route('/users/delete', methods=["POST"])
