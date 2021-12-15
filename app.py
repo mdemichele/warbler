@@ -6,7 +6,7 @@ from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
 from forms import UserAddForm, LoginForm, MessageForm, EditUserForm
-from models import db, connect_db, User, Message
+from models import db, connect_db, User, Message, Likes
 
 CURR_USER_KEY = "curr_user"
 
@@ -158,7 +158,18 @@ def users_show(user_id):
                 .order_by(Message.timestamp.desc())
                 .limit(100)
                 .all())
-    return render_template('users/show.html', user=user, messages=messages)
+                
+    # Get the number of likes by the user 
+    total_likes = Likes.query.all()
+    user_likes = []
+    
+    for like in total_likes:
+        if like.user_id == session[CURR_USER_KEY]:
+            user_likes.append(like)
+    
+    total_user_likes = len(user_likes)
+    
+    return render_template('users/show.html', user=user, messages=messages, like_count=total_user_likes)
 
 
 @app.route('/users/<int:user_id>/following')
@@ -343,16 +354,91 @@ def homepage():
     """
 
     if g.user:
+        # Get a list of all the users that the current user follows 
+        following_list = User.query.get(session[CURR_USER_KEY]).following 
+        
+        # Get the ids of all the users following 
+        following_ids = set()
+        for user in following_list:
+            following_ids.add(user.id)
+        
+        # Get all messages from all users, ordered by timestamp 
         messages = (Message
                     .query
                     .order_by(Message.timestamp.desc())
-                    .limit(100)
                     .all())
-
-        return render_template('home.html', messages=messages)
-
+                    
+        # Filter out messages not by users that the user follows 
+        filtered_messages = []
+        for message in messages:
+            if message.user_id in following_ids:
+                filtered_messages.append(message)
+        
+        # Get the user's likes 
+        users_likes = Likes.query.all()
+        
+        # Get the message ids from user's likes 
+        liked_message_ids = []
+        for like in users_likes:
+            if like.user_id == session[CURR_USER_KEY]:
+                liked_message_ids.append(like.message_id)
+        
+        # Shorten to only show the latest 100 if there are more than 100 posts 
+        if len(filtered_messages) < 100:
+            return render_template('home.html', messages=filtered_messages, likes=liked_message_ids)
+        else:
+            shortened_messages = []
+            for i in range(0, 100):
+                shortened_messages.append(filtered_messages[i])
+                return render_template('home.html', messages=shortened_messages, likes=liked_message_ids)
     else:
         return render_template('home-anon.html')
+        
+###############################################################################
+# Like Routes 
+
+@app.route("/users/add_like/<msgId>", methods=["POST"])
+def add_remove_like(msgId):
+    """Adds/Removes a like"""
+    # First, get the message to determine who wrote it 
+    message = Message.query.get(msgId)
+    
+    # Only allow like if message is NOT written by current user 
+    if message.user_id != session[CURR_USER_KEY]:
+        
+        # Get the ids of all the messages that user has already liked 
+        user_likes = User.query.get(session[CURR_USER_KEY]).likes
+        user_msg_ids = []
+        for like in user_likes:
+            user_msg_ids.append(like.id)
+        
+        # If user has already liked message, unlike it 
+        if message.id not in user_msg_ids:
+            like = Likes(user_id=session[CURR_USER_KEY], message_id=msgId)
+            
+            db.session.add(like)
+            db.session.commit()
+            
+        else:
+            like = Likes.query.filter_by(user_id=session[CURR_USER_KEY], message_id=message.id).first()
+            
+            db.session.delete(like)
+            db.session.commit()
+
+    return redirect('/')
+
+@app.route('/users/<userId>/likes')
+def get_likes_page(userId):
+    """Displays the likes page"""
+    # Get all liked messages 
+    liked_messages = User.query.get(userId).likes 
+    
+    # Get just the ids of liked messages 
+    ids = []
+    for like in liked_messages:
+        ids.append(like.id)
+    
+    return render_template("/users/likes.html", messages=liked_messages, likes=ids)
 
 
 ##############################################################################
