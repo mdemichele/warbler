@@ -71,3 +71,43 @@ class MessageViewTestCase(TestCase):
 
             msg = Message.query.one()
             self.assertEqual(msg.text, "Hello")
+            
+    def test_delete_message(self):
+        """Can user delete a specific message"""
+        
+        # Login to set g object 
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.testuser.id 
+                
+            # create new message 
+            responseNew = c.post("/messages/new", data={"text": "Hello"})
+            msg = Message.query.one()
+            
+            # Delete Message 
+            responseDelete = c.post(f"/messages/{msg.id}/delete")
+                
+            # Check that message successfully deleted 
+            messages = Message.query.all()
+            self.assertEqual(len(messages), 0)
+            
+            # Check that view function returns the /users/user.id page 
+            self.assertEqual(responseDelete.status_code, 302)
+    
+    def test_show_message(self):
+        """Can user show the specific message details"""
+        
+        # Login to set g object 
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess[CURR_USER_KEY] = self.testuser.id 
+            
+            # Create new message 
+            responseNew = c.post("/messages/new", data={"text": "Hello"})
+            msg = Message.query.one()
+            
+            # Get the message details page 
+            response = c.get(f"/messages/{msg.id}")
+            
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(msg.text, str(response.data))
